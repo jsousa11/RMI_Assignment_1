@@ -1,1 +1,1 @@
-python3 mainRob.py "$@"
+python3 mainRobC2.py "$@"
