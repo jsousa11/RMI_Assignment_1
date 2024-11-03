@@ -14,6 +14,7 @@ class PIDController:
         self.integral = 0
         self.previous_error = 0
     
+    # Atualiza o controlador PID com o erro e o intervalo de tempo
     def update(self, error, dt):
         # Cálculo do termo integral
         self.integral += error * dt
@@ -104,7 +105,7 @@ class MyRob(CRobLinkAngs):
         turn_speed = 0.15
 
         # Controladores PID para ajuste lateral e curvas
-        lateral_pid = PIDController(Kp=0.15, Ki=0.02, Kd=0.03)
+        lateral_pid = PIDController(Kp=0.15, Ki=0.02, Kd=0.02)
         turn_pid = PIDController(Kp=0.5, Ki=0.02, Kd=0.03)
 
         # Leitura dos sensores
@@ -141,6 +142,7 @@ class MyRob(CRobLinkAngs):
                 lateral_output = max(min(lateral_output, max_adjustment), -max_adjustment)
                 self.driveMotors(base_speed + lateral_output, base_speed - lateral_output)
 
+        # Tentar recuperar de colisões
         if self.measures.collision:
             self.driveMotors(-0.1, -0.1)
             if left_distance > right_distance:

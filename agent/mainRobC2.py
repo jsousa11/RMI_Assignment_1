@@ -15,6 +15,7 @@ class PIDController:
         self.integral = 0
         self.previous_error = 0
     
+    # Atualiza o controlador PID com o erro e o tempo decorrido
     def update(self, error, dt):
         # Cálculo do termo integral
         self.integral += error * dt
@@ -32,32 +33,15 @@ class MyRob(CRobLinkAngs):
         self.readSensors()
 
         # Controladores PID para os eixos X e Y
-        self.pid_x = PIDController(Kp=0.1, Ki=0.01, Kd=0.01)
-        self.pid_y = PIDController(Kp=0.1, Ki=0.01, Kd=0.01)
+        self.pid_x = PIDController(Kp=0.01, Ki=0.01, Kd=0.1)
+        self.pid_y = PIDController(Kp=0.01, Ki=0.01, Kd=0.1)
 
-        global MAP
-        global current_MAP_x
-        global current_MAP_y
-        global initial_MAP_x
-        global initial_MAP_y
-
-        MAP = []
-        for i in range(27):
-            rows = 55 * [10]
-            MAP.append(rows)
-
-        current_MAP_x = current_MAP_y = []
-
-        global initial_GPS_x
-        global initial_GPS_y
-        global start_GPS_x
-        global start_GPS_y
-        global current_GPS_x
-        global current_GPS_y
-        initial_GPS_x = self.measures.x
-        initial_GPS_y = self.measures.y
-        start_GPS_x = self.measures.x
-        start_GPS_y = self.measures.y
+        global GRID_MAP, gps_start_x, gps_start_y
+        global initial_map_x, initial_map_y, map_current_x, map_current_y
+        
+        # Inicializa o mapa do labirinto a ser explorado com valores padrão
+        GRID_MAP = [[10] * 55 for _ in range(27)]
+        gps_start_x, gps_start_y = self.measures.x, self.measures.y
 
     # In this map the center of cell (i,j), (i in 0..6, j in 0..13) is mapped to labMap[i*2][j*2].
     # to know if there is a wall on top of cell(i,j) (i in 0..5), check if the value of labMap[i*2+1][j*2] is space or not
@@ -113,23 +97,24 @@ class MyRob(CRobLinkAngs):
                     self.setReturningLed(False)
                 self.wander()
 
-    def determineQuadrant(self):
+    # Saber a orientação do robô
+    def determine_orientation(self):
         self.readSensors()
-        compass = self.measures.compass
-        Quadrant = [False, False, False, False]
+        compass_dir = self.measures.compass
+        dir = [False, False, False, False]
 
-        if abs(compass) <= 45:
-            Quadrant[0] = True  # Facing Right
-        elif compass > 45 and compass <= 135:
-            Quadrant[1] = True  # Facing Up
-        elif abs(compass) >= 135:
-            Quadrant[2] = True  # Facing Left
-        elif compass <= -45 and compass >= -135:
-            Quadrant[3] = True  # Facing Down
+        if abs(compass_dir) <= 45:
+            dir[0] = True
+        elif compass_dir > 45 and compass_dir <= 135:
+            dir[1] = True
+        elif abs(compass_dir) >= 135:
+            dir[2] = True
+        elif compass_dir <= -45 and compass_dir >= -135:
+            dir[3] = True
+        return dir
 
-        return Quadrant
-
-    def mapSurroundings(self, quadrant, y, x):
+    # Mapear as células laterais ao robô
+    def mapSurroundings(self, dir, y, x):
         center_id = 0
         left_id = 1
         right_id = 2
@@ -140,143 +125,94 @@ class MyRob(CRobLinkAngs):
         left_sensor = self.measures.irSensor[left_id]
         right_sensor = self.measures.irSensor[right_id]
 
-        def update_map(sensor_value, threshold, map_coords, wall_value, empty_value, explore_value):
+        # Atualiza o mapa com as paredes detectadas
+        def update_map(sensor_value, threshold, coords, wall_value, empty_value, explore_value):
             if sensor_value >= threshold:
-                MAP[map_coords[0]][map_coords[1]] = wall_value
+                GRID_MAP[coords[0]][coords[1]] = wall_value
             else:
-                MAP[map_coords[0]][map_coords[1]] = empty_value
-                if MAP[map_coords[2]][map_coords[3]] != 80:
-                    MAP[map_coords[2]][map_coords[3]] = explore_value
+                GRID_MAP[coords[0]][coords[1]] = empty_value
+                if GRID_MAP[coords[2]][coords[3]] != 80:
+                    GRID_MAP[coords[2]][coords[3]] = explore_value
 
-        if quadrant[0]:  # Facing Right
+        if dir[0]:  # Virado para a direita
             update_map(center_sensor, dist_tolerance, (y, x + 1, y, x + 2), 30, 20, 60)
             update_map(left_sensor, dist_tolerance, (y - 1, x, y - 2, x), 40, 20, 60)
             update_map(right_sensor, dist_tolerance, (y + 1, x, y + 2, x), 40, 20, 60)
-            return MAP[y][x + 1], MAP[y][x + 2], MAP[y + 1][x], MAP[y + 2][x], MAP[y - 1][x], MAP[y - 2][x]
+            return GRID_MAP[y][x + 1], GRID_MAP[y][x + 2], GRID_MAP[y + 1][x], GRID_MAP[y + 2][x], GRID_MAP[y - 1][x], GRID_MAP[y - 2][x]
 
-        elif quadrant[1]:  # Facing Up
+        elif dir[1]:  # Virado para cima
             update_map(center_sensor, dist_tolerance, (y - 1, x, y - 2, x), 40, 20, 60)
             update_map(left_sensor, dist_tolerance, (y, x - 1, y, x - 2), 30, 20, 60)
             update_map(right_sensor, dist_tolerance, (y, x + 1, y, x + 2), 30, 20, 60)
-            return MAP[y - 1][x], MAP[y - 2][x], MAP[y][x + 1], MAP[y][x + 2], MAP[y][x - 1], MAP[y][x - 2]
+            return GRID_MAP[y - 1][x], GRID_MAP[y - 2][x], GRID_MAP[y][x + 1], GRID_MAP[y][x + 2], GRID_MAP[y][x - 1], GRID_MAP[y][x - 2]
 
-        elif quadrant[2]:  # Facing Left
+        elif dir[2]:  # Virado para a esquerda
             update_map(center_sensor, dist_tolerance, (y, x - 1, y, x - 2), 30, 20, 60)
             update_map(left_sensor, dist_tolerance, (y + 1, x, y + 2, x), 40, 20, 60)
             update_map(right_sensor, dist_tolerance, (y - 1, x, y - 2, x), 40, 20, 60)
-            return MAP[y][x - 1], MAP[y][x - 2], MAP[y - 1][x], MAP[y - 2][x], MAP[y + 1][x], MAP[y + 2][x]
+            return GRID_MAP[y][x - 1], GRID_MAP[y][x - 2], GRID_MAP[y - 1][x], GRID_MAP[y - 2][x], GRID_MAP[y + 1][x], GRID_MAP[y + 2][x]
 
-        elif quadrant[3]:  # Facing Down
+        elif dir[3]:  # Virado para baixo
             update_map(center_sensor, dist_tolerance, (y + 1, x, y + 2, x), 40, 20, 60)
             update_map(left_sensor, dist_tolerance, (y, x + 1, y, x + 2), 30, 20, 60)
             update_map(right_sensor, dist_tolerance, (y, x - 1, y, x - 2), 30, 20, 60)
-            return MAP[y + 1][x], MAP[y + 2][x], MAP[y][x - 1], MAP[y][x - 2], MAP[y][x + 1], MAP[y + 2][x]
+            return GRID_MAP[y + 1][x], GRID_MAP[y + 2][x], GRID_MAP[y][x - 1], GRID_MAP[y][x - 2], GRID_MAP[y][x + 1], GRID_MAP[y + 2][x]
 
+    # Mover o robô para a próxima célula
     def move(self, directional_states):
         self.readSensors()
         
-        GPS_x = self.measures.x - initial_GPS_x
-        GPS_y = self.measures.y - initial_GPS_y
+        gps_x = self.measures.x - gps_start_x
+        gps_y = self.measures.y - gps_start_y
 
         x_positions = list(range(-26, 28, 2))
-        current_GPS_x = x_positions[find_next_cell(x_positions, GPS_x)]
+        map_gps_x = x_positions[find_next_cell(x_positions, gps_x)]
 
         y_positions = list(range(-12, 14, 2))
-        current_GPS_y = y_positions[find_next_cell(y_positions, GPS_y)]
+        map_gps_y = y_positions[find_next_cell(y_positions, gps_y)]
         
         error_x = error_y = 100
-        lin = 0.15
+        lin_speed = 0.13
         tolerance = 0.225
-    
+
         while any(directional_states) and (error_x > tolerance or error_y > tolerance):
             self.readSensors()
-            GPS_x = self.measures.x - initial_GPS_x
-            GPS_y = self.measures.y - initial_GPS_y
+            gps_x = self.measures.x - gps_start_x
+            gps_y = self.measures.y - gps_start_y
 
-            if directional_states[0]:  # Right
-                error_x = (current_GPS_x + 2) - GPS_x
-                error_y = current_GPS_y - GPS_y
-                rot = self.pid_y.update(error_y, dt=0.1)
-                right_rotation = lin + rot
-                left_rotation = lin - rot
+            if directional_states[0]:  # Direita
+                error_x = (map_gps_x + 2) - gps_x
+                error_y = map_gps_y - gps_y
+                rot_correction = self.pid_y.update(error_y, dt=0.05)
+                right_rotation = lin_speed + rot_correction
+                left_rotation = lin_speed - rot_correction
                 self.driveMotors(left_rotation, right_rotation)
 
-            if directional_states[1]:  # Up
-                error_x = current_GPS_x - GPS_x
-                error_y = (current_GPS_y + 2) - GPS_y
-                rot = self.pid_x.update(error_x, dt=0.1)
-                right_rotation = lin - rot
-                left_rotation = lin + rot
+            if directional_states[1]:  # Cima
+                error_x = map_gps_x - gps_x
+                error_y = (map_gps_y + 2) - gps_y
+                rot_correction = self.pid_x.update(error_x, dt=0.1)
+                right_rotation = lin_speed - rot_correction
+                left_rotation = lin_speed + rot_correction
                 self.driveMotors(left_rotation, right_rotation)
 
-            if directional_states[2]:  # Left
-                error_x = GPS_x - (current_GPS_x - 2)
-                error_y = GPS_y - current_GPS_y
-                rot = self.pid_y.update(error_y, dt=0.1)
-                right_rotation = lin + rot
-                left_rotation = lin - rot
+            if directional_states[2]:  # Esquerda
+                error_x = gps_x - (map_gps_x - 2)
+                error_y = gps_y - map_gps_y
+                rot_correction = self.pid_y.update(error_y, dt=0.1)
+                right_rotation = lin_speed + rot_correction
+                left_rotation = lin_speed - rot_correction
                 self.driveMotors(left_rotation, right_rotation)
 
-            if directional_states[3]:  # Down
-                error_x = GPS_x - current_GPS_x
-                error_y = GPS_y - (current_GPS_y - 2)
-                rot = self.pid_x.update(error_x, dt=0.1)
-                right_rotation = lin - rot
-                left_rotation = lin + rot
+            if directional_states[3]:  # Baixo
+                error_x = gps_x - map_gps_x
+                error_y = gps_y - (map_gps_y - 2)
+                rot_correction = self.pid_x.update(error_x, dt=0.1)
+                right_rotation = lin_speed - rot_correction
+                left_rotation = lin_speed + rot_correction
                 self.driveMotors(left_rotation, right_rotation)
-             
-    def turn_left_90(self):
-        def adjust_compass(compass):
-            compass_options = [0, 90, -180, -90, 180]
-            calibrated_compass = compass_options[find_next_cell(compass_options, compass)]
-            return -180 if calibrated_compass == 180 else calibrated_compass
-
-        def calculate_rotation_error(current_compass, target_compass):
-            rotation_error = target_compass - current_compass
-            if rotation_error > 120:
-                rotation_error -= 360
-            return rotation_error
-
-        def apply_rotation(rotation_error):
-            Kd_angle = 0.005
-            rotation = Kd_angle * rotation_error
-            self.driveMotors(-rotation, rotation)
-
-        target_compass = adjust_compass(self.measures.compass) + 90
-        rotation_error = 100
-
-        while abs(rotation_error) >= 1:
-            self.readSensors()
-            current_compass = self.measures.compass
-            rotation_error = calculate_rotation_error(current_compass, target_compass)
-            apply_rotation(rotation_error)
-
-    def turn_right_90(self):
-        def adjust_compass(compass):
-            compass_options = [0, 90, -180, -90, 180]
-            calibrated_compass = compass_options[find_next_cell(compass_options, compass)]
-            return -180 if calibrated_compass == 180 else calibrated_compass
-
-        def calculate_rotation_error(current_compass, target_compass):
-            rotation_error = target_compass - current_compass
-            if rotation_error < -120:
-                rotation_error += 360
-            return rotation_error
-
-        def apply_rotation(rotation_error):
-            Kd_angle = 0.005
-            rotation = Kd_angle * rotation_error
-            self.driveMotors(-rotation, rotation)
-
-        target_compass = adjust_compass(self.measures.compass) - 90
-        rotation_error = 100
-
-        while abs(rotation_error) >= 1:
-            self.readSensors()
-            current_compass = self.measures.compass
-            rotation_error = calculate_rotation_error(current_compass, target_compass)
-            apply_rotation(rotation_error)
-
+    
+    # Encontrar o caminho mais curto para a próxima célula (Algoritmo de busca em largura - BFS)
     def find_path(self, map_array, unvisited_x, unvisited_y, current_x, current_y):
         try:
             unvisited_positions = list(zip(unvisited_y, unvisited_x))
@@ -334,59 +270,57 @@ class MyRob(CRobLinkAngs):
         except:
             print("Maze Completed. Exiting.")
             quit()
-            
-    def find_closest_index(arr, val):
-        differences = [abs(val - i) for i in arr]
-        return differences.index(min(differences))
 
+    # Direcionar o robô para a próxima célula
     def navigate_path(self, next_moves):
-        def adjust_orientation(quadrant, direction_index):
-            while not quadrant[direction_index]:
-                self.turn_left_90()
-                quadrant = self.determineQuadrant()
-            return quadrant
-    
-        def move_and_update_quadrant(quadrant):
-            self.move(quadrant)
-            return self.determineQuadrant()
-    
+        def adjust_orientation(dir, direction_index):
+            while not dir[direction_index]:
+                self.rotate_90("left")
+                dir = self.determine_orientation()
+            return dir
+
+        def move_and_update_quadrant(dir):
+            self.move(dir)
+            return self.determine_orientation()
+
         def get_rotation_action(prev_direction, next_direction):
             rotation_map = {
-                ('LEFT', 'DOWN'): self.turn_left_90,
-                ('LEFT', 'UP'): self.turn_right_90,
-                ('RIGHT', 'DOWN'): self.turn_right_90,
-                ('RIGHT', 'UP'): self.turn_left_90,
-                ('UP', 'LEFT'): self.turn_left_90,
-                ('UP', 'RIGHT'): self.turn_right_90,
-                ('DOWN', 'LEFT'): self.turn_right_90,
-                ('DOWN', 'RIGHT'): self.turn_left_90
+                ('LEFT', 'DOWN'): lambda: self.rotate_90("left"),
+                ('LEFT', 'UP'): lambda: self.rotate_90("right"),
+                ('RIGHT', 'DOWN'): lambda: self.rotate_90("right"),
+                ('RIGHT', 'UP'): lambda: self.rotate_90("left"),
+                ('UP', 'LEFT'): lambda: self.rotate_90("left"),
+                ('UP', 'RIGHT'): lambda: self.rotate_90("right"),
+                ('DOWN', 'LEFT'): lambda: self.rotate_90("right"),
+                ('DOWN', 'RIGHT'): lambda: self.rotate_90("left")
             }
-            return  rotation_map.get((prev_direction, next_direction))
-    
-        quadrant = self.determineQuadrant()
+            return rotation_map.get((prev_direction, next_direction))
+
+        dir = self.determine_orientation()
         direction_map = {
             'LEFT': 2,
             'RIGHT': 0,
             'UP': 1,
             'DOWN': 3
         }
-    
+
         if next_moves[0] in direction_map:
-            quadrant = adjust_orientation(quadrant, direction_map[next_moves[0]])
-    
-        quadrant = move_and_update_quadrant(quadrant)
-    
+            dir = adjust_orientation(dir, direction_map[next_moves[0]])
+
+        dir = move_and_update_quadrant(dir)
+
         for i in range(1, len(next_moves)):
             if next_moves[i] == next_moves[i - 1]:
-                quadrant = move_and_update_quadrant(quadrant)
+                dir = move_and_update_quadrant(dir)
             else:
                 rotation_function = get_rotation_action(next_moves[i - 1], next_moves[i])
                 if rotation_function:
                     rotation_function()
-                    quadrant = self.determineQuadrant()
-                    quadrant = move_and_update_quadrant(quadrant)
+                    dir = self.determine_orientation()
+                    dir = move_and_update_quadrant(dir)
 
-    def save_map(self, MAP, start_x, start_y):
+    # Salvar o mapa em um arquivo de texto
+    def save_map(self, GRID_MAP, start_x, start_y):
         def map_symbol(cell):
             symbol_map = {
                 80: 'X',
@@ -399,78 +333,117 @@ class MyRob(CRobLinkAngs):
                 50: 'I'
             }
             return symbol_map.get(cell, ' ')
-    
-        MAP[start_y][start_x] = 50
-    
-        # Convert the map to a string representation
-        MAP_str = "\n".join("".join(map_symbol(cell) for cell in row) for row in MAP)
-        
-        # Write the map to a file
+
+        # Define a posição inicial
+        GRID_MAP[start_y][start_x] = 50
+
+        MAP_str = "\n".join("".join(map_symbol(cell) for cell in row) for row in GRID_MAP)
+
         with open('mymap.txt', 'w') as f:
             f.write(MAP_str)
 
+    # Função principal para explorar o labirinto
     def wander(self):
-        global initial_GPS_x, initial_GPS_y, start_GPS_x, start_GPS_y
-        global current_GPS_x, current_GPS_y, MAP
-        global current_MAP_x, current_MAP_y, initial_MAP_x, initial_MAP_y
+        global gps_start_x, gps_start_y, map_gps_x, map_gps_y, GRID_MAP
+        global map_current_y, current_MAP_y, initial_map_x, initial_map_y
 
         self.readSensors()
 
         compass = self.measures.compass
-        GPS_x = self.measures.x - initial_GPS_x
-        GPS_y = self.measures.y - initial_GPS_y
+        gps_x = self.measures.x - gps_start_x
+        gps_y = self.measures.y - gps_start_y
 
-        current_GPS_x = self.get_current_position(GPS_x, -26, 28, 2)
-        current_GPS_y = self.get_current_position(GPS_y, -12, 14, 2)
+        map_gps_x = self.get_current_position(gps_x, -26, 28, 2)
+        map_gps_y = self.get_current_position(gps_y, -12, 14, 2)
 
-        initial_MAP_x, initial_MAP_y = 27, 13
-        current_MAP_x = initial_MAP_x + current_GPS_x
-        current_MAP_y = initial_MAP_y - current_GPS_y
+        initial_map_x, initial_map_y = 27, 13
+        map_current_y = initial_map_x + map_gps_x
+        current_MAP_y = initial_map_y - map_gps_y
 
-        current_MAP_x = current_MAP_x if current_MAP_x else initial_MAP_x
-        current_MAP_y = current_MAP_y if current_MAP_y else initial_MAP_y
+        map_current_y = map_current_y if map_current_y else initial_map_x
+        current_MAP_y = current_MAP_y if current_MAP_y else initial_map_y
 
-        quadrant = self.determineQuadrant()
+        dir = self.determine_orientation()
 
-        MAP[initial_MAP_y][initial_MAP_x] = 80
-        front, front_next, right, right_next, left, left_next = self.mapSurroundings(quadrant, current_MAP_y, current_MAP_x)
+        GRID_MAP[initial_map_y][initial_map_x] = 80
+        front, front_next, right, right_next, left, left_next = self.mapSurroundings(dir, current_MAP_y, map_current_y)
         
-        MAP[current_MAP_y][current_MAP_x] = 90
-        MAP_array = np.array(MAP)
+        GRID_MAP[current_MAP_y][map_current_y] = 90
+        MAP_array = np.array(GRID_MAP)
         unvisited_y, unvisited_x = np.where(MAP_array == 60)
         current_y, current_x = np.where(MAP_array == 90)
 
-        MAP[current_MAP_y][current_MAP_x] = 80
+        GRID_MAP[current_MAP_y][map_current_y] = 80
         
-        if self.should_turn_right(right_next, right, front_next):
-            self.turn_right_90()
-        elif self.should_turn_left(left_next, left, front_next):
-            self.turn_left_90()
+        if self.should_turn(right_next, right, front_next, "right"):
+            self.rotate_90("right")
+        elif self.should_turn(left_next, left, front_next, "left"):
+            self.rotate_90("left")
         elif front == 20 and front_next != 80:
-            self.move(quadrant)
+            self.move(dir)
         else:
             if not unvisited_y.size or not unvisited_x.size:
                 print("No more cells to explore. Exiting.")
-                self.save_map(MAP, initial_MAP_x, initial_MAP_y)
+                self.save_map(GRID_MAP, initial_map_x, initial_map_y)
                 quit()
         
             list_movements = self.find_path(MAP_array, unvisited_x, unvisited_y, current_x, current_y)
             self.navigate_path(list_movements)
         
         self.driveMotors(0, 0)
-        self.save_map(MAP, initial_MAP_x, initial_MAP_y)
+        self.save_map(GRID_MAP, initial_map_x, initial_map_y)
 
+    # Verificar se o robô deve virar à esquerda ou à direita
+    def should_turn(self, direction_next, direction_current, front_next, turn_direction):
+        if turn_direction == "right":
+            return direction_next == 60 and direction_current == 20 and front_next != 60
+        elif turn_direction == "left":
+            return direction_next == 60 and direction_current == 20 and front_next != 60
+        return False
+
+    # Rotação de 90 graus
+    def rotate_90(self, direction="right"):
+        # Define o ângulo alvo baseado na direção
+        adjustment_angle = -90 if direction == "right" else 90
+        target_compass = self.adjust_to_nearest_90(self.measures.compass) + adjustment_angle
+
+        while True:
+            self.readSensors()
+            current_compass = self.measures.compass
+            rotation_error = self.calculate_rotation_difference(current_compass, target_compass)
+
+            if abs(rotation_error) > 5:
+                # Corrige a rotação e ajusta a intensidade da rotação
+                self.apply_rotation_error(rotation_error * 0.5)  
+            else:
+                rotation_error = 0
+                break
+
+    # Ajustar o ângulo da bússola para o múltiplo de 90 mais próximo
+    def adjust_to_nearest_90(self, compass_angle):
+        compass_options = [0, 90, -180, -90, 180]
+        closest_angle = compass_options[find_next_cell(compass_options, compass_angle)]
+        return -180 if closest_angle == 180 else closest_angle
+
+    # Calcular a diferença de rotação entre o ângulo atual e o alvo
+    def calculate_rotation_difference(self, current, target):
+        rotation_error = target - current
+        if rotation_error > 180:
+            rotation_error -= 360
+        elif rotation_error < -180:
+            rotation_error += 360
+        return rotation_error
+
+    # Aplicar a correção de rotação aos motores
+    def apply_rotation_error(self, rotation_error):
+        rotation_correction = 0.004 * rotation_error
+        self.driveMotors(-rotation_correction, rotation_correction)
 
     def get_current_position(self, GPS, start, end, step):
         gps_grid = [i for i in range(start, end, step)]
         return gps_grid[find_next_cell(gps_grid, GPS)]
 
-    def should_turn_right(self, right_next, right, front_next):
-        return right_next == 60 and right == 20 and front_next != 60
-
-    def should_turn_left(self, left_next, left, front_next):
-        return left_next == 60 and left == 20 and front_next != 60
-
+# Encontrar a célula mais próxima
 def find_next_cell(list, N):
     cells = []
     for i in list:
