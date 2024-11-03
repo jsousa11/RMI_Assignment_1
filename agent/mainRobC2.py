@@ -216,6 +216,7 @@ class MyRob(CRobLinkAngs):
     def find_path(self, map_array, unvisited_x, unvisited_y, current_x, current_y):
         try:
             unvisited_positions = list(zip(unvisited_y, unvisited_x))
+            unvisited_positions.sort(key=lambda pos: abs(pos[0] - current_y) + abs(pos[1] - current_x))  # Ordena pela proximidade
             linear_moves = []
             all_moves = []
 
