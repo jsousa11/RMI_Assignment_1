@@ -33,13 +33,13 @@ class SensorFilter:
         self.values.append(new_value)
         if len(self.values) > self.window_size:
             self.values.pop(0)
-        return sum(self.values) / len(self.values)  # Retorna a média das leituras
+        return sum(self.values) / len(self.values)
 
 class MyRob(CRobLinkAngs):
     def __init__(self, rob_name, rob_id, angles, host):
         CRobLinkAngs.__init__(self, rob_name, rob_id, angles, host)
-        self.at_intersection = False  # Estado para saber se está em interseção
-        self.intersection_timer = 0  # Temporizador para continuar em frente após interseção
+        self.at_intersection = False
+        self.intersection_timer = 0
 
     # In this map the center of cell (i,j), (i in 0..6, j in 0..13) is mapped to labMap[i*2][j*2].
     # to know if there is a wall on top of cell(i,j) (i in 0..5), check if the value of labMap[i*2+1][j*2] is space or not
@@ -97,17 +97,15 @@ class MyRob(CRobLinkAngs):
         left_id = 1
         right_id = 2
 
-        # Distâncias seguras ajustadas
-        safe_distance_front = 1.5  # Reagir antes a obstáculos à frente
-        dead_zone = 1.1  # Ignorar leituras abaixo desta distância para o sensor frontal
+        safe_distance_front = 1.5
+        dead_zone = 1.1
 
-        # Velocidades ajustáveis
-        base_speed = 0.13       # Velocidade de avanço contínuo
-        turn_speed = 0.15      # Velocidade ao fazer curvas
+        base_speed = 0.13
+        turn_speed = 0.15
 
         # Controladores PID para ajuste lateral e curvas
-        lateral_pid = PIDController(Kp=0.15, Ki=0.02, Kd=0.03)  # Ajustes otimizados para minimizar ondulações
-        turn_pid = PIDController(Kp=0.5, Ki=0.02, Kd=0.03)  # Ajuste fino para curvas
+        lateral_pid = PIDController(Kp=0.15, Ki=0.02, Kd=0.03)
+        turn_pid = PIDController(Kp=0.5, Ki=0.02, Kd=0.03)
 
         # Leitura dos sensores
         left_distance = self.measures.irSensor[left_id]
@@ -115,10 +113,10 @@ class MyRob(CRobLinkAngs):
         front_distance = self.measures.irSensor[center_id]
 
         # Limitar ajustes laterais com base em max_adjustment
-        max_adjustment = 0.02  # Limite de ajuste lateral para suavizar movimentos
+        max_adjustment = 0.02
 
         if left_distance < dead_zone and right_distance < dead_zone:
-            # Intersecção detectada, continue em frente com ajustes mínimos
+            # Intersecção detectada
             adjusted_left_distance = 2.2
             adjusted_right_distance = 2.2
             error = adjusted_left_distance - adjusted_right_distance
@@ -143,7 +141,6 @@ class MyRob(CRobLinkAngs):
                 lateral_output = max(min(lateral_output, max_adjustment), -max_adjustment)
                 self.driveMotors(base_speed + lateral_output, base_speed - lateral_output)
 
-        # Se colidiu, tentar recuperar
         if self.measures.collision:
             self.driveMotors(-0.1, -0.1)
             if left_distance > right_distance:
@@ -161,14 +158,14 @@ class Map():
         for child in root.iter('Row'):
            line=child.attrib['Pattern']
            row =int(child.attrib['Pos'])
-           if row % 2 == 0:  # this line defines vertical lines
+           if row % 2 == 0:
                for c in range(len(line)):
                    if (c+1) % 3 == 0:
                        if line[c] == '|':
                            self.labMap[row][(c+1)//3*2-1]='|'
                        else:
                            None
-           else:  # this line defines horizontal lines
+           else:
                for c in range(len(line)):
                    if c % 3 == 0:
                        if line[c] == '-':
